@@ -16,8 +16,8 @@ const server = new Server(
 );
 
 // Simple HTTP clients - no complex initialization
-const searxngUrl = 'http://localhost:8081';
-const crawl4aiUrl = 'http://localhost:8001';
+const searxngUrl = process.env.SEARXNG_URL || 'http://localhost:8081';
+const crawl4aiUrl = process.env.CRAWL4AI_URL || 'http://localhost:8001';
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
