@@ -1,5 +1,6 @@
 import axios, { AxiosResponse } from 'axios';
 import { logger } from './logger.js';
+import { loggableError, normalizeHttpError } from './http-errors.js';
 
 export interface SearchResult {
   title: string;
@@ -71,8 +72,8 @@ export class SearXNGClient {
       return data;
       
     } catch (error) {
-      logger.error(`SearXNG search error for "${query}":`, error);
-      throw error;
+      logger.error(`SearXNG search error for "${query}":`, loggableError(error, 'SearXNG'));
+      throw normalizeHttpError(error, 'SearXNG');
     }
   }
 
@@ -86,7 +87,7 @@ export class SearXNGClient {
       
       return response.data;
     } catch (error) {
-      logger.error('Failed to get SearXNG engines:', error);
+      logger.error('Failed to get SearXNG engines:', loggableError(error, 'SearXNG'));
       return null;
     }
   }

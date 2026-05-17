@@ -47,6 +47,7 @@ docker compose up -d mcp-server
 ```
 
 Use normal routable URLs when those services live on another host or Docker network.
+The Compose file maps `host.docker.internal` to Docker's host gateway so this works on Linux and Docker Desktop. If you run the MCP container with `network_mode: host`, use `http://127.0.0.1:<port>` instead.
 
 Host ports are configurable:
 
@@ -158,6 +159,7 @@ Most Crawl4AI tools accept native `browser_config` and `crawler_config` objects,
 | `CRAWL4AI_URL` | `http://localhost:11235` | Crawl4AI Docker API base URL. |
 | `CRAWL4AI_BEARER_TOKEN` | unset | Optional bearer token if Crawl4AI security is enabled. |
 | `CRAWL4AI_TIMEOUT_MS` | `120000` | HTTP timeout for Crawl4AI calls. |
+| `CRAWL4AI_RETRIES` | `1` | Retry count for transient Crawl4AI HTTP/network failures. |
 | `SEARXNG_PORT` | `8081` | Compose host port for bundled SearXNG. |
 | `CRAWL4AI_PORT` | `11235` | Compose host port for bundled Crawl4AI. |
 | `REDIS_PORT` | `6380` | Compose host port for bundled Redis. |

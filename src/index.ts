@@ -72,6 +72,7 @@ export class SearXNGCrawl4AIMCPServer {
   private readonly searxng: SearXNGClient;
   private readonly crawl4ai: Crawl4AIClient;
   private readonly enabledTools: Set<string> | 'all';
+  private isClosing = false;
 
   constructor() {
     this.server = new Server(
@@ -524,6 +525,10 @@ export class SearXNGCrawl4AIMCPServer {
   }
 
   async close() {
+    if (this.isClosing) {
+      return;
+    }
+    this.isClosing = true;
     await this.server.close();
   }
 }
@@ -576,7 +581,6 @@ async function runStreamableHttp() {
         if (transport.sessionId) {
           transports.delete(transport.sessionId);
         }
-        await server.close();
       };
       await server.connect(transport);
     }
@@ -715,16 +719,19 @@ function buildOpenApiDocument(tools: Tool[], baseUrl: string) {
   };
 }
 
-const transport = (process.env.MCP_TRANSPORT || 'stdio').toLowerCase();
+export async function run() {
+  const transport = (process.env.MCP_TRANSPORT || 'stdio').toLowerCase();
 
-if (transport === 'http' || transport === 'streamable-http') {
-  runStreamableHttp().catch(error => {
-    logger.error('Failed to start Streamable HTTP MCP server:', error);
-    process.exit(1);
-  });
-} else {
-  runStdio().catch(error => {
-    logger.error('Failed to start stdio MCP server:', error);
+  if (transport === 'http' || transport === 'streamable-http') {
+    await runStreamableHttp();
+  } else {
+    await runStdio();
+  }
+}
+
+if (!process.env.JEST_WORKER_ID && process.argv[1] && /(?:src|dist)[\\/]+index\.(?:ts|js)$/.test(process.argv[1])) {
+  run().catch(error => {
+    logger.error('Failed to start MCP server:', error);
     process.exit(1);
   });
 }

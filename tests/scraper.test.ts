@@ -1,6 +1,17 @@
-import { describe, it, expect } from '@jest/globals';
+import { afterEach, describe, it, expect } from '@jest/globals';
+import { SearXNGCrawl4AIMCPServer } from '../src/index';
 
 describe('SearXNG + Crawl4AI MCP Server', () => {
+  const originalEnabledTools = process.env.ENABLED_TOOLS;
+
+  afterEach(async () => {
+    if (originalEnabledTools === undefined) {
+      delete process.env.ENABLED_TOOLS;
+    } else {
+      process.env.ENABLED_TOOLS = originalEnabledTools;
+    }
+  });
+
   describe('Crawl4AI endpoint contract', () => {
     const defaultTools = [
       'search_web',
@@ -46,6 +57,31 @@ describe('SearXNG + Crawl4AI MCP Server', () => {
     it('uses Crawl4AI official Docker API defaults', () => {
       const crawl4aiUrl = process.env.CRAWL4AI_URL || 'http://localhost:11235';
       expect(crawl4aiUrl).toBe('http://localhost:11235');
+    });
+
+    it('filters actual MCP tools to the default allowlist', () => {
+      delete process.env.ENABLED_TOOLS;
+      const server = new SearXNGCrawl4AIMCPServer();
+      const names = server.listTools().map(tool => tool.name);
+
+      expect(names).toEqual(defaultTools);
+      expect(names).not.toContain('crawl4ai_health');
+    });
+
+    it('rejects disabled tools even when called directly', async () => {
+      delete process.env.ENABLED_TOOLS;
+      const server = new SearXNGCrawl4AIMCPServer();
+
+      await expect(server.callTool('crawl4ai_health')).rejects.toThrow('Tool is disabled: crawl4ai_health');
+    });
+
+    it('can expose all implemented tools by configuration', () => {
+      process.env.ENABLED_TOOLS = 'all';
+      const server = new SearXNGCrawl4AIMCPServer();
+      const names = server.listTools().map(tool => tool.name);
+
+      expect(names).toHaveLength(16);
+      expect(names).toContain('crawl4ai_health');
     });
   });
 
