@@ -2,12 +2,15 @@ import { describe, it, expect } from '@jest/globals';
 
 describe('SearXNG + Crawl4AI MCP Server', () => {
   describe('Crawl4AI endpoint contract', () => {
-    const tools = [
+    const defaultTools = [
       'search_web',
       'search_and_crawl',
       'crawl4ai_crawl',
       'crawl4ai_crawl_stream',
       'crawl4ai_markdown',
+    ];
+
+    const optionalTools = [
       'crawl4ai_html',
       'crawl4ai_screenshot',
       'crawl4ai_pdf',
@@ -21,12 +24,23 @@ describe('SearXNG + Crawl4AI MCP Server', () => {
       'crawl4ai_health',
     ];
 
-    it('documents the native Crawl4AI tools exposed by the server', () => {
-      expect(tools).not.toContain('scrape_url');
-      expect(tools).not.toContain('crawl4ai_scrape');
-      expect(tools).toContain('crawl4ai_crawl');
-      expect(tools).toContain('crawl4ai_markdown');
-      expect(tools).toContain('crawl4ai_crawl_stream');
+    it('documents the conservative default tool surface', () => {
+      expect(defaultTools).toEqual([
+        'search_web',
+        'search_and_crawl',
+        'crawl4ai_crawl',
+        'crawl4ai_crawl_stream',
+        'crawl4ai_markdown',
+      ]);
+      expect(defaultTools).not.toContain('crawl4ai_screenshot');
+      expect(defaultTools).not.toContain('crawl4ai_execute_js');
+    });
+
+    it('documents optional tools that require ENABLED_TOOLS opt-in', () => {
+      expect(optionalTools).toContain('crawl4ai_pdf');
+      expect(optionalTools).toContain('crawl4ai_health');
+      expect(optionalTools).not.toContain('scrape_url');
+      expect(optionalTools).not.toContain('crawl4ai_scrape');
     });
 
     it('uses Crawl4AI official Docker API defaults', () => {

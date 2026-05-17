@@ -17,6 +17,14 @@ config();
 
 type JsonRecord = Record<string, unknown>;
 
+const DEFAULT_ENABLED_TOOLS = [
+  'search_web',
+  'search_and_crawl',
+  'crawl4ai_crawl',
+  'crawl4ai_crawl_stream',
+  'crawl4ai_markdown',
+];
+
 const textResult = (value: unknown) => ({
   content: [
     {
@@ -63,6 +71,7 @@ export class SearXNGCrawl4AIMCPServer {
   private readonly server: Server;
   private readonly searxng: SearXNGClient;
   private readonly crawl4ai: Crawl4AIClient;
+  private readonly enabledTools: Set<string> | 'all';
 
   constructor() {
     this.server = new Server(
@@ -82,6 +91,7 @@ export class SearXNGCrawl4AIMCPServer {
       process.env.CRAWL4AI_URL || 'http://localhost:11235',
       process.env.CRAWL4AI_BEARER_TOKEN
     );
+    this.enabledTools = this.parseEnabledTools();
 
     this.setupToolHandlers();
   }
@@ -102,6 +112,10 @@ export class SearXNGCrawl4AIMCPServer {
   }
 
   async callTool(name: string, input: JsonRecord = {}): Promise<unknown> {
+    if (!this.isToolEnabled(name)) {
+      throw new Error(`Tool is disabled: ${name}`);
+    }
+
     switch (name) {
       case 'search_web':
         return await this.handleSearchWeb(input);
@@ -168,6 +182,28 @@ export class SearXNGCrawl4AIMCPServer {
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+  }
+
+  private parseEnabledTools(): Set<string> | 'all' {
+    const configured = process.env.ENABLED_TOOLS || process.env.MCP_ENABLED_TOOLS;
+    if (!configured || configured.trim().length === 0) {
+      return new Set(DEFAULT_ENABLED_TOOLS);
+    }
+
+    const tokens = configured
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+
+    if (tokens.includes('*') || tokens.includes('all')) {
+      return 'all';
+    }
+
+    return new Set(tokens);
+  }
+
+  private isToolEnabled(name: string): boolean {
+    return this.enabledTools === 'all' || this.enabledTools.has(name);
   }
 
   private requiredString(input: JsonRecord, field: string): string {
@@ -249,6 +285,10 @@ export class SearXNGCrawl4AIMCPServer {
   }
 
   listTools(): Tool[] {
+    return this.allTools().filter(tool => this.isToolEnabled(tool.name));
+  }
+
+  private allTools(): Tool[] {
     return [
       {
         name: 'search_web',

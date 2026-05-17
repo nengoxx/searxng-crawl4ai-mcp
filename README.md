@@ -22,10 +22,20 @@ npm run build
 docker compose up -d
 ```
 
-That starts only the MCP server by default. If you want Compose to also run SearXNG, Redis, and Crawl4AI, use the `stack` profile:
+That starts only the MCP server by default. If you want Compose to manage more of the stack, use profiles:
 
 ```bash
-docker compose --profile stack up -d
+# MCP only, connect to existing SearXNG and Crawl4AI
+docker compose up -d
+
+# MCP + Crawl4AI + Redis, connect to existing SearXNG
+docker compose --profile crawl4ai up -d
+
+# MCP + SearXNG only, connect to existing Crawl4AI
+docker compose --profile searxng up -d
+
+# MCP + SearXNG + Crawl4AI + Redis
+docker compose --profile full up -d
 ```
 
 If you already run SearXNG and Crawl4AI elsewhere, point the MCP container at them:
@@ -37,6 +47,16 @@ docker compose up -d mcp-server
 ```
 
 Use normal routable URLs when those services live on another host or Docker network.
+
+Host ports are configurable:
+
+```bash
+MCP_HTTP_PORT=3303 \
+SEARXNG_PORT=18081 \
+CRAWL4AI_PORT=11236 \
+REDIS_PORT=16380 \
+docker compose --profile full up -d
+```
 
 Health checks:
 
@@ -87,11 +107,16 @@ For Open WebUI, native Streamable HTTP MCP is the preferred path. Use the OpenAP
 
 ## Tools
 
+By default, the server exposes only the conservative core tools:
+
 - `search_web`: search via SearXNG.
 - `search_and_crawl`: search via SearXNG, then crawl top results through Crawl4AI `/crawl`.
 - `crawl4ai_crawl`: direct Crawl4AI `/crawl`.
 - `crawl4ai_crawl_stream`: direct Crawl4AI `/crawl/stream`, collected into JSON.
 - `crawl4ai_markdown`: direct Crawl4AI `/md`.
+
+Additional tools exist but are disabled unless you opt in:
+
 - `crawl4ai_html`: direct Crawl4AI `/html`.
 - `crawl4ai_screenshot`: direct Crawl4AI `/screenshot`.
 - `crawl4ai_pdf`: direct Crawl4AI `/pdf`.
@@ -101,6 +126,21 @@ For Open WebUI, native Streamable HTTP MCP is the preferred path. Use the OpenAP
 - `crawl4ai_enqueue_llm_job` / `crawl4ai_get_llm_job`: background LLM extraction jobs.
 - `crawl4ai_schema`: current Crawl4AI BrowserConfig and CrawlerRunConfig schema defaults.
 - `crawl4ai_health`: Crawl4AI health check.
+
+Control the exposed surface with `ENABLED_TOOLS`:
+
+```bash
+# Default explicit set
+ENABLED_TOOLS=search_web,search_and_crawl,crawl4ai_crawl,crawl4ai_crawl_stream,crawl4ai_markdown
+
+# Add selected extra tools
+ENABLED_TOOLS=search_web,search_and_crawl,crawl4ai_crawl,crawl4ai_markdown,crawl4ai_pdf,crawl4ai_health
+
+# Expose every implemented tool
+ENABLED_TOOLS=all
+```
+
+Disabled tools are hidden from MCP `tools/list`, `/tools`, and `/openapi.json`, and direct calls to them are rejected.
 
 Most Crawl4AI tools accept native `browser_config` and `crawler_config` objects, so new Crawl4AI options can be passed through without another wrapper release.
 
@@ -113,10 +153,14 @@ Most Crawl4AI tools accept native `browser_config` and `crawler_config` objects,
 | `MCP_HTTP_PORT` | `3003` | Streamable HTTP port. |
 | `MCP_HTTP_PATH` | `/mcp` | Streamable HTTP endpoint. |
 | `OPENAPI_BASE_PATH` | `/api` | Base path for OpenAPI REST tool endpoints. |
+| `ENABLED_TOOLS` | core 5 tools | Comma-separated tool names, or `all`. |
 | `SEARXNG_URL` | `http://localhost:8081` | SearXNG base URL. |
 | `CRAWL4AI_URL` | `http://localhost:11235` | Crawl4AI Docker API base URL. |
 | `CRAWL4AI_BEARER_TOKEN` | unset | Optional bearer token if Crawl4AI security is enabled. |
 | `CRAWL4AI_TIMEOUT_MS` | `120000` | HTTP timeout for Crawl4AI calls. |
+| `SEARXNG_PORT` | `8081` | Compose host port for bundled SearXNG. |
+| `CRAWL4AI_PORT` | `11235` | Compose host port for bundled Crawl4AI. |
+| `REDIS_PORT` | `6380` | Compose host port for bundled Redis. |
 
 ## Crawl4AI Version Notes
 

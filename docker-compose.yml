@@ -5,11 +5,11 @@ services:
   searxng:
     image: searxng/searxng:latest
     container_name: searxng
-    profiles: ["stack"]
+    profiles: ["searxng", "full"]
     ports:
-      - "8081:8080"
+      - "${SEARXNG_PORT:-8081}:8080"
     environment:
-      - SEARXNG_BASE_URL=http://localhost:8081/
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://localhost:${SEARXNG_PORT:-8081}/}
       - SEARXNG_SECRET=${SEARXNG_SECRET:-$(openssl rand -hex 32)}
     volumes:
       - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
@@ -32,10 +32,10 @@ services:
   # Redis for caching
   redis:
     image: redis:alpine
-    profiles: ["stack"]
+    profiles: ["crawl4ai", "full"]
     command: redis-server --save 30 1 --loglevel warning
     ports:
-      - "6380:6379"
+      - "${REDIS_PORT:-6380}:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -51,10 +51,10 @@ services:
   crawl4ai:
     image: unclecode/crawl4ai:latest
     container_name: crawl4ai
-    profiles: ["stack"]
+    profiles: ["crawl4ai", "full"]
     shm_size: "1gb"
     ports:
-      - "11235:11235"
+      - "${CRAWL4AI_PORT:-11235}:11235"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -71,7 +71,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3003:3003"
+      - "${MCP_HTTP_PORT:-3003}:3003"
     environment:
       - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
       - CRAWL4AI_URL=${CRAWL4AI_URL:-http://crawl4ai:11235}
@@ -80,6 +80,7 @@ services:
       - MCP_HTTP_PORT=3003
       - MCP_HTTP_PATH=${MCP_HTTP_PATH:-/mcp}
       - OPENAPI_BASE_PATH=${OPENAPI_BASE_PATH:-/api}
+      - ENABLED_TOOLS=${ENABLED_TOOLS:-search_web,search_and_crawl,crawl4ai_crawl,crawl4ai_crawl_stream,crawl4ai_markdown}
       - LOG_LEVEL=info
     networks:
       - search-net
