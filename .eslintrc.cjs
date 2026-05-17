@@ -14,7 +14,7 @@ module.exports = {
   },
   rules: {
     'no-unused-vars': 'off',
-    'no-explicit-any': 'off',
+    '@typescript-eslint/no-explicit-any': 'off',
     'no-console': 'off',
     'prefer-const': 'error',
   },

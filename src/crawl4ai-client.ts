@@ -1,164 +1,194 @@
-import axios, { AxiosResponse } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { logger } from './logger.js';
 
-export interface ScrapeOptions {
-  formats?: string[];
-  wait_for?: number;
-  timeout?: number;
-  proxy_url?: string;
-}
+export type MarkdownFilter = 'fit' | 'raw' | 'bm25' | 'llm';
 
-export interface BatchScrapeOptions {
-  formats?: string[];
-  concurrency?: number;
-}
-
-export interface ExtractOptions {
-  prompt: string;
-  schema?: any;
-}
-
-export interface Crawl4AIResponse {
-  success: boolean;
-  url: string;
-  data?: {
-    markdown?: string;
-    html?: string;
-    links?: string[];
-    media?: string[];
-    metadata?: {
-      title: string;
-      description: string;
-      language: string;
-      word_count: number;
-    };
+export interface Crawl4AICrawlOptions {
+  browser_config?: Record<string, unknown>;
+  crawler_config?: Record<string, unknown>;
+  hooks?: {
+    code?: Record<string, string>;
+    timeout?: number;
   };
-  error?: string;
 }
 
-export interface BatchScrapeResponse {
-  success: boolean;
-  total: number;
-  results: Crawl4AIResponse[];
+export interface Crawl4AIMarkdownOptions {
+  f?: MarkdownFilter;
+  q?: string;
+  c?: string;
+  provider?: string;
+  temperature?: number;
+  base_url?: string;
+}
+
+export interface Crawl4AIScreenshotOptions {
+  screenshot_wait_for?: number;
+  wait_for_images?: boolean;
+  output_path?: string;
+}
+
+export interface Crawl4AIPdfOptions {
+  output_path?: string;
+}
+
+export interface Crawl4AILlmOptions {
+  provider?: string;
+  temperature?: number;
+  base_url?: string;
+}
+
+export interface Crawl4AIJobOptions extends Crawl4AICrawlOptions {
+  webhook_config?: Record<string, unknown>;
 }
 
 export class Crawl4AIClient {
-  private baseUrl: string;
+  private readonly baseUrl: string;
+  private readonly http: AxiosInstance;
 
-  constructor(baseUrl: string = 'http://localhost:8000') {
+  constructor(baseUrl: string = 'http://localhost:11235', bearerToken?: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
-  }
-
-  async scrape(url: string, options: ScrapeOptions = {}): Promise<Crawl4AIResponse> {
-    try {
-      logger.info(`Scraping with Crawl4AI: ${url}`);
-      
-      const response: AxiosResponse<Crawl4AIResponse> = await axios.post(
-        `${this.baseUrl}/scrape`,
-        {
-          url,
-          formats: options.formats || ['markdown'],
-          wait_for: options.wait_for || 0,
-          timeout: options.timeout || 30000,
-          proxy_url: options.proxy_url
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: (options.timeout || 30000) + 5000
-        }
-      );
-
-      const result = response.data;
-      
-      if (!result.success) {
-        throw new Error(`Scraping failed: ${result.error}`);
-      }
-      
-      logger.info(`Successfully scraped ${url} (${result.data?.metadata?.word_count || 0} words)`);
-      return result;
-      
-    } catch (error) {
-      logger.error(`Crawl4AI scrape error for ${url}:`, error);
-      throw error;
-    }
-  }
-
-  async batchScrape(urls: string[], options: BatchScrapeOptions = {}): Promise<BatchScrapeResponse> {
-    try {
-      logger.info(`Batch scraping ${urls.length} URLs with Crawl4AI`);
-      
-      const response: AxiosResponse<BatchScrapeResponse> = await axios.post(
-        `${this.baseUrl}/batch-scrape`,
-        {
-          urls,
-          formats: options.formats || ['markdown'],
-          concurrency: Math.min(options.concurrency || 3, 5)
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 120000 // 2 minutes for batch operations
-        }
-      );
-
-      const result = response.data;
-      
-      const successful = result.results.filter(r => r.success).length;
-      logger.info(`Batch scrape completed: ${successful}/${result.total} successful`);
-      
-      return result;
-      
-    } catch (error) {
-      logger.error('Crawl4AI batch scrape error:', error);
-      throw error;
-    }
-  }
-
-  async extract(url: string, options: ExtractOptions): Promise<Crawl4AIResponse> {
-    try {
-      logger.info(`Extracting data from ${url} with prompt: "${options.prompt.substring(0, 50)}..."`);
-      
-      const response: AxiosResponse<Crawl4AIResponse> = await axios.post(
-        `${this.baseUrl}/extract`,
-        {
-          url,
-          prompt: options.prompt,
-          schema: options.schema
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 60000 // Extraction can take longer
-        }
-      );
-
-      const result = response.data;
-      
-      if (!result.success) {
-        throw new Error(`Extraction failed: ${result.error}`);
-      }
-      
-      logger.info(`Successfully extracted data from ${url}`);
-      return result;
-      
-    } catch (error) {
-      logger.error(`Crawl4AI extract error for ${url}:`, error);
-      throw error;
-    }
+    this.http = axios.create({
+      baseURL: this.baseUrl,
+      timeout: Number(process.env.CRAWL4AI_TIMEOUT_MS || 120000),
+      headers: {
+        Accept: 'application/json',
+        ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
+      },
+    });
   }
 
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await axios.get(`${this.baseUrl}/health`, {
-        timeout: 5000
-      });
+      const response = await this.http.get('/health', { timeout: 5000 });
       return response.status === 200;
-    } catch (error) {
+    } catch {
       return false;
     }
+  }
+
+  async getSchema(): Promise<unknown> {
+    const response = await this.http.get('/schema');
+    return response.data;
+  }
+
+  async crawl(urls: string[], options: Crawl4AICrawlOptions = {}): Promise<unknown> {
+    logger.info(`Crawl4AI crawl: ${urls.length} URL(s)`);
+    const response = await this.http.post('/crawl', {
+      urls,
+      browser_config: options.browser_config || {},
+      crawler_config: options.crawler_config || {},
+      ...(options.hooks ? { hooks: options.hooks } : {}),
+    });
+    return response.data;
+  }
+
+  async crawlStream(urls: string[], options: Crawl4AICrawlOptions = {}): Promise<unknown[]> {
+    logger.info(`Crawl4AI stream crawl: ${urls.length} URL(s)`);
+    const response = await this.http.post('/crawl/stream', {
+      urls,
+      browser_config: options.browser_config || {},
+      crawler_config: { ...(options.crawler_config || {}), stream: true },
+      ...(options.hooks ? { hooks: options.hooks } : {}),
+    }, {
+      responseType: 'text',
+      headers: { Accept: 'application/x-ndjson' },
+      transformResponse: value => value,
+    });
+
+    return String(response.data)
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => JSON.parse(line));
+  }
+
+  async markdown(url: string, options: Crawl4AIMarkdownOptions = {}): Promise<unknown> {
+    const response = await this.http.post('/md', {
+      url,
+      f: options.f || 'fit',
+      ...(options.q ? { q: options.q } : {}),
+      c: options.c || '0',
+      ...(options.provider ? { provider: options.provider } : {}),
+      ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+      ...(options.base_url ? { base_url: options.base_url } : {}),
+    });
+    return response.data;
+  }
+
+  async html(url: string): Promise<unknown> {
+    const response = await this.http.post('/html', { url });
+    return response.data;
+  }
+
+  async screenshot(url: string, options: Crawl4AIScreenshotOptions = {}): Promise<unknown> {
+    const response = await this.http.post('/screenshot', {
+      url,
+      ...options,
+    });
+    return response.data;
+  }
+
+  async pdf(url: string, options: Crawl4AIPdfOptions = {}): Promise<unknown> {
+    const response = await this.http.post('/pdf', {
+      url,
+      ...options,
+    });
+    return response.data;
+  }
+
+  async executeJs(url: string, scripts: string[]): Promise<unknown> {
+    const response = await this.http.post('/execute_js', { url, scripts });
+    return response.data;
+  }
+
+  async ask(url: string, q: string, options: Crawl4AILlmOptions = {}): Promise<unknown> {
+    const response = await this.http.get(`/llm/${encodeURIComponent(url)}`, {
+      params: {
+        q,
+        ...(options.provider ? { provider: options.provider } : {}),
+        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+        ...(options.base_url ? { base_url: options.base_url } : {}),
+      },
+    });
+    return response.data;
+  }
+
+  async enqueueCrawlJob(urls: string[], options: Crawl4AIJobOptions = {}): Promise<unknown> {
+    const response = await this.http.post('/crawl/job', {
+      urls,
+      browser_config: options.browser_config || {},
+      crawler_config: options.crawler_config || {},
+      ...(options.webhook_config ? { webhook_config: options.webhook_config } : {}),
+    });
+    return response.data;
+  }
+
+  async getCrawlJob(taskId: string): Promise<unknown> {
+    const response = await this.http.get(`/crawl/job/${encodeURIComponent(taskId)}`);
+    return response.data;
+  }
+
+  async enqueueLlmJob(payload: {
+    url: string;
+    q: string;
+    schema?: string;
+    cache?: boolean;
+    provider?: string;
+    webhook_config?: Record<string, unknown>;
+    temperature?: number;
+    base_url?: string;
+  }): Promise<unknown> {
+    const response = await this.http.post('/llm/job', payload);
+    return response.data;
+  }
+
+  async getLlmJob(taskId: string): Promise<unknown> {
+    const response = await this.http.get(`/llm/job/${encodeURIComponent(taskId)}`);
+    return response.data;
+  }
+
+  async request<T = unknown>(config: AxiosRequestConfig): Promise<T> {
+    const response = await this.http.request<T>(config);
+    return response.data;
   }
 }

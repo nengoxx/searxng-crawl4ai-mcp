@@ -2,20 +2,6 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install dependencies for Playwright
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont
-
-# Set Playwright to use system chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
 # Copy package files
 COPY package*.json ./
 

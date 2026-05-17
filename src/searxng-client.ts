@@ -60,7 +60,7 @@ export class SearXNGClient {
       const response: AxiosResponse<SearXNGSearchResponse> = await axios.get(url, {
         headers: {
           'Accept': 'application/json',
-          'User-Agent': 'Firecrawl-MCP-Custom/1.0'
+          'User-Agent': 'SearXNG-Crawl4AI-MCP/2.0'
         },
         timeout: 10000
       });

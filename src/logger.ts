@@ -26,8 +26,9 @@ const transports: winston.transport[] = [
   })
 ];
 
-// Add console transport only if not running as MCP server
-if (!process.env.MCP_MODE) {
+// Stdio MCP servers must not write logs to stdout. Streamable HTTP can use console logs.
+const isStdioMcp = !process.env.MCP_TRANSPORT || process.env.MCP_TRANSPORT === 'stdio' || process.env.MCP_MODE;
+if (!isStdioMcp) {
   transports.unshift(new winston.transports.Console({
     format: winston.format.combine(
       winston.format.colorize(),

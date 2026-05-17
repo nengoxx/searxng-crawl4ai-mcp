@@ -1,266 +1,123 @@
 # SearXNG + Crawl4AI MCP Server
 
-A self-hosted MCP (Model Context Protocol) server providing fast search and reliable web scraping using SearXNG + Crawl4AI stack.
+Self-hosted MCP server that combines SearXNG search with Crawl4AI's current Docker API.
 
-## 🚀 **Why This Solution?**
+This project now calls Crawl4AI directly. It does not use Firecrawl and does not require the old compatibility FastAPI wrapper.
 
-This project evolved from limitations found in self-hosted Firecrawl:
-- ❌ Firecrawl's search API doesn't work in self-hosted mode
-- ❌ Missing Fire-engine features in self-hosted version  
-- ❌ Authentication issues and poor documentation
+## Architecture
 
-**Our solution provides:**
-- ✅ **Truly self-hosted search** via SearXNG (aggregates 70+ search engines)
-- ✅ **Superior scraping** via Crawl4AI (50k+ GitHub stars)
-- ✅ **3x faster** than Claude Code native search tools
-- ✅ **100% reliable** vs failing native WebFetch
-- ✅ **Complete privacy** - no external API dependencies
+- `src/index.ts` exposes MCP tools over stdio, Streamable HTTP, and an OpenAPI-compatible REST facade.
+- `src/crawl4ai-client.ts` calls the official Crawl4AI Docker API on port `11235`.
+- `src/searxng-client.ts` calls SearXNG for metasearch.
+- `docker-compose.yml` can run:
+  - SearXNG on `http://localhost:8081`
+  - Crawl4AI official image on `http://localhost:11235`
+  - this MCP server on Streamable HTTP at `http://localhost:3003/mcp`
 
-## 🏗️ **Architecture**
+## Quick Start
 
-```
-┌─────────────┐    ┌──────────────┐    ┌─────────────┐
-│             │    │              │    │             │
-│  SearXNG    │    │  Crawl4AI    │    │   Redis     │
-│  (Search)   │    │  (Scraping)  │    │  (Cache)    │
-│             │    │              │    │             │
-│  Port 8081  │    │  Port 8001   │    │ Port 6380   │
-└─────────────┘    └──────────────┘    └─────────────┘
-        │                   │                   │
-        └───────────────────┼───────────────────┘
-                           │
-                  ┌──────────────┐
-                  │              │
-                  │ MCP Server   │
-                  │ (TypeScript) │
-                  │              │
-                  └──────────────┘
-                           │
-                    ┌─────────────┐
-                    │             │
-                    │ Claude Code │
-                    │             │
-                    └─────────────┘
-```
-
-## 📦 **Features**
-
-- 🔍 **Fast Search**: SearXNG aggregates 70+ search engines (Google, Bing, DuckDuckGo, etc.)
-- 🕷️ **Advanced Scraping**: Crawl4AI with Playwright for JavaScript-heavy sites
-- ⚡ **High Performance**: Sub-second search, reliable scraping
-- 🐳 **Docker Ready**: Complete Docker Compose orchestration
-- 🔄 **Proxy Support**: Built-in rotating IP proxy integration
-- 📊 **MCP Integration**: 3 powerful tools for Claude Code
-- 🛡️ **Privacy First**: All processing happens locally
-
-## 🚀 **Quick Start**
-
-### 1. Clone and Setup
 ```bash
-git clone https://github.com/yourusername/searxng-crawl4ai-mcp
-cd searxng-crawl4ai-mcp
 npm install
 npm run build
-```
-
-### 2. Start Docker Services
-```bash
-# Start all services (SearXNG, Crawl4AI, Redis)
 docker compose up -d
-
-# Verify services are running
-curl http://localhost:8081/search?q=test&format=json  # SearXNG
-curl http://localhost:8001/health                      # Crawl4AI
 ```
 
-### 3. Configure Claude Code MCP
+That starts only the MCP server by default. If you want Compose to also run SearXNG, Redis, and Crawl4AI, use the `stack` profile:
 
-**Simple Configuration (No Proxy):**
+```bash
+docker compose --profile stack up -d
+```
+
+If you already run SearXNG and Crawl4AI elsewhere, point the MCP container at them:
+
+```bash
+SEARXNG_URL=http://host.docker.internal:8081 \
+CRAWL4AI_URL=http://host.docker.internal:11235 \
+docker compose up -d mcp-server
+```
+
+Use normal routable URLs when those services live on another host or Docker network.
+
+Health checks:
+
+```bash
+curl "http://localhost:8081/search?q=test&format=json"
+curl "http://localhost:11235/health"
+curl "http://localhost:3003/health"
+```
+
+## MCP Transports
+
+Stdio is the default:
+
 ```json
 {
   "mcpServers": {
     "searxng-crawl4ai": {
       "command": "node",
-      "args": ["fixed-mcp-server.js"],
-      "cwd": "/absolute/path/to/your/project"
-    }
-  }
-}
-```
-
-**With Proxy Configuration:**
-```json
-{
-  "mcpServers": {
-    "searxng-crawl4ai": {
-      "command": "node",
-      "args": ["fixed-mcp-server.js"],
-      "cwd": "/absolute/path/to/your/project",
+      "args": ["dist/index.js"],
+      "cwd": "/absolute/path/to/searxng-crawl4ai-mcp",
       "env": {
-        "PROXY_URL": "http://username:password@your-proxy-server.com:10000"
+        "MCP_TRANSPORT": "stdio",
+        "SEARXNG_URL": "http://localhost:8081",
+        "CRAWL4AI_URL": "http://localhost:11235"
       }
     }
   }
 }
 ```
 
-### 4. Increase Token Limits (Recommended)
+Streamable HTTP:
 
-Create `.claude/settings.json`:
-```json
-{
-  "environmentVariables": {
-    "MAX_MCP_OUTPUT_TOKENS": "100000"
-  }
-}
-```
-
-## 🛠️ **Available MCP Tools**
-
-### 1. `search_web` - Lightning Fast Search
-```json
-{
-  "query": "latest AI developments 2025",
-  "maxResults": 10
-}
-```
-**Returns:** 30+ search results in <1 second from multiple engines
-
-### 2. `crawl4ai_scrape` - Advanced Web Scraping
-```json
-{
-  "url": "https://finance.yahoo.com/quote/BTC-USD/",
-  "formats": ["markdown"]
-}
-```
-**Returns:** Full page content with metadata (title, word count, clean markdown)
-
-### 3. `search_and_scrape` - Combined Power Workflow
-```json
-{
-  "query": "Bitcoin technical analysis September 2025",
-  "maxResults": 2
-}
-```
-**Returns:** Search results + scraped content from top URLs (complete market intelligence)
-
-## 📊 **Performance Benchmarks**
-
-| Metric | SearXNG MCP | Claude Code Native |
-|--------|-------------|-------------------|
-| **Search Speed** | 935ms avg | 2,500-3,000ms |
-| **Result Count** | 30+ results | 10 curated |
-| **Scraping Success** | 100% success | 0% (WebFetch fails) |
-| **Content Extracted** | 29,807 words tested | 0 words |
-| **Privacy** | ✅ Self-hosted | ❌ External APIs |
-
-## 🎯 **Trading & Finance Use Cases**
-
-Perfect for traders and financial analysts:
-
-- **Real-time Price Data**: Extract current Bitcoin, stock, forex prices with exact timestamps
-- **Technical Analysis**: Get complete RSI, MACD, support/resistance data from TradingView
-- **Market Sentiment**: Scrape Fear & Greed Index, VIX, sentiment indicators  
-- **News Analysis**: Get latest Fed decisions, earnings, economic data
-- **API Discovery**: Extract trading APIs from financial websites
-
-Example trading query:
-```
-Use search_and_scrape to find "Bitcoin RSI technical analysis September 2025"
-```
-
-**Result**: Complete professional trading analysis with specific price levels, technical indicators, and market predictions.
-
-## 🔧 **Configuration**
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PROXY_URL` | Your rotating IP proxy URL | None |
-| `SEARXNG_URL` | SearXNG service URL | http://localhost:8081 |
-| `CRAWL4AI_URL` | Crawl4AI service URL | http://localhost:8001 |
-| `MCP_MODE` | Disable console logging for MCP | false |
-
-### Docker Services
-
-- **SearXNG**: Port 8081 - Metasearch engine
-- **Crawl4AI**: Port 8001 - Web scraping service  
-- **Redis**: Port 6380 - Caching layer
-
-## 🛡️ **Security & Privacy**
-
-- ✅ **No external API calls** - everything runs locally
-- ✅ **Proxy support** - hide your IP address
-- ✅ **Credential masking** - sensitive data automatically masked in logs
-- ✅ **Self-hosted** - complete control over your data
-
-## 🆚 **vs Alternatives**
-
-| Feature | This Solution | Firecrawl Self-Hosted | Claude Native |
-|---------|---------------|----------------------|---------------|
-| **Search API** | ✅ Working | ❌ Broken | ✅ Working |
-| **Speed** | ⚡ Sub-second | N/A | 🐌 2-3 seconds |
-| **Scraping** | ✅ 100% reliable | ❌ Limited | ❌ Unreliable |
-| **Privacy** | ✅ Self-hosted | ✅ Self-hosted | ❌ External APIs |
-| **Cost** | ✅ Free | ✅ Free | ❌ Rate limited |
-
-## 🚀 **Advanced Usage**
-
-### Proxy Configuration
 ```bash
-# Set in .env file
-PROXY_URL=http://username:password@proxy-server.com:10000
+MCP_TRANSPORT=streamable-http MCP_HTTP_PORT=3003 npm start
 ```
 
-### Multiple Search Engines
-SearXNG automatically queries:
-- Google, Bing, DuckDuckGo
-- Startpage, Qwant, Yandex  
-- Wikipedia, GitHub, StackOverflow
-- Academic sources (ArXiv, Google Scholar)
+The endpoint is `http://localhost:3003/mcp` by default. In Open WebUI, add it as Type `MCP (Streamable HTTP)`, not OpenAPI.
 
-### Custom Scraping Options
-```json
-{
-  "url": "https://example.com",
-  "formats": ["markdown", "html", "links"],
-  "wait_for": 2000,
-  "timeout": 30000
-}
-```
+## OpenAPI
 
-## 🐛 **Troubleshooting**
+The same process also exposes an OpenAPI facade for clients that prefer ordinary HTTP tools:
 
-### Services Not Starting
-```bash
-docker compose logs searxng
-docker compose logs crawl4ai
-```
+- Spec: `http://localhost:3003/openapi.json`
+- Plugin discovery: `http://localhost:3003/.well-known/ai-plugin.json`
+- Tool endpoints: `POST http://localhost:3003/api/<tool_name>`
 
-### Port Conflicts
-Edit `docker-compose.yml` to change ports:
-- SearXNG: 8081 → your-port
-- Crawl4AI: 8001 → your-port
-- Redis: 6380 → your-port
+For Open WebUI, native Streamable HTTP MCP is the preferred path. Use the OpenAPI URL only if you deliberately want OpenAPI-style tool registration.
 
-### MCP Connection Issues
-1. Ensure all Docker services are running
-2. Check absolute path in MCP configuration
-3. Verify `npm run build` completed successfully
+## Tools
 
-## 📄 **License**
+- `search_web`: search via SearXNG.
+- `search_and_crawl`: search via SearXNG, then crawl top results through Crawl4AI `/crawl`.
+- `crawl4ai_crawl`: direct Crawl4AI `/crawl`.
+- `crawl4ai_crawl_stream`: direct Crawl4AI `/crawl/stream`, collected into JSON.
+- `crawl4ai_markdown`: direct Crawl4AI `/md`.
+- `crawl4ai_html`: direct Crawl4AI `/html`.
+- `crawl4ai_screenshot`: direct Crawl4AI `/screenshot`.
+- `crawl4ai_pdf`: direct Crawl4AI `/pdf`.
+- `crawl4ai_execute_js`: direct Crawl4AI `/execute_js`.
+- `crawl4ai_ask`: direct Crawl4AI `/llm/{url}` Q&A.
+- `crawl4ai_enqueue_crawl_job` / `crawl4ai_get_crawl_job`: background crawl jobs.
+- `crawl4ai_enqueue_llm_job` / `crawl4ai_get_llm_job`: background LLM extraction jobs.
+- `crawl4ai_schema`: current Crawl4AI BrowserConfig and CrawlerRunConfig schema defaults.
+- `crawl4ai_health`: Crawl4AI health check.
 
-MIT License - Feel free to use in your projects!
+Most Crawl4AI tools accept native `browser_config` and `crawler_config` objects, so new Crawl4AI options can be passed through without another wrapper release.
 
-## 🤝 **Contributing**
+## Environment
 
-Contributions welcome! Please read our contributing guidelines and submit pull requests.
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_TRANSPORT` | `stdio` | Use `stdio`, `streamable-http`, or `http`. |
+| `MCP_HTTP_HOST` | `0.0.0.0` | Streamable HTTP host. |
+| `MCP_HTTP_PORT` | `3003` | Streamable HTTP port. |
+| `MCP_HTTP_PATH` | `/mcp` | Streamable HTTP endpoint. |
+| `OPENAPI_BASE_PATH` | `/api` | Base path for OpenAPI REST tool endpoints. |
+| `SEARXNG_URL` | `http://localhost:8081` | SearXNG base URL. |
+| `CRAWL4AI_URL` | `http://localhost:11235` | Crawl4AI Docker API base URL. |
+| `CRAWL4AI_BEARER_TOKEN` | unset | Optional bearer token if Crawl4AI security is enabled. |
+| `CRAWL4AI_TIMEOUT_MS` | `120000` | HTTP timeout for Crawl4AI calls. |
 
-## ⭐ **Star This Repo**
+## Crawl4AI Version Notes
 
-If this MCP server helps your workflow, please star the repository!
-
----
-
-**Built with ❤️ for the Claude Code community**
+As of May 17, 2026, Crawl4AI `v0.8.x` ships an official Docker API with `/crawl`, `/crawl/stream`, `/md`, `/html`, `/screenshot`, `/pdf`, `/execute_js`, `/llm`, `/schema`, `/health`, and job endpoints. This MCP server targets those endpoints directly.

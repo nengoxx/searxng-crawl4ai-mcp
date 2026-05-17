@@ -1,77 +1,52 @@
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 
-describe('Firecrawl MCP Server', () => {
-
-  beforeAll(async () => {
-    // Setup test environment
-    process.env.PROXY_URL = 'http://username:password@your-proxy-server.com:10000';
-    process.env.REDIS_URL = 'redis://localhost:6379';
-  });
-
-  afterAll(async () => {
-    // Cleanup
-  });
-
-  describe('Proxy Configuration', () => {
-    it('should create proxy agent with provided URL', () => {
-      const proxyUrl = process.env.PROXY_URL;
-      expect(proxyUrl).toBeDefined();
-      expect(proxyUrl).toContain('your-proxy-server.com:10000');
-    });
-
-    it('should mask credentials in logs', () => {
-      const proxyUrl = 'http://username:password@your-proxy-server.com:10000';
-      const masked = proxyUrl.replace(/\/\/.*@/, '//***@');
-      expect(masked).toBe('http://***@your-proxy-server.com:10000');
-    });
-  });
-
-  describe('MCP Tools', () => {
-    const mockTools = [
-      'scrape_url',
-      'batch_scrape', 
-      'crawl_website',
-      'map_website',
-      'extract_structured_data',
-      'get_crawl_status',
+describe('SearXNG + Crawl4AI MCP Server', () => {
+  describe('Crawl4AI endpoint contract', () => {
+    const tools = [
       'search_web',
-      'search_and_scrape',
-      'crawl4ai_scrape'
+      'search_and_crawl',
+      'crawl4ai_crawl',
+      'crawl4ai_crawl_stream',
+      'crawl4ai_markdown',
+      'crawl4ai_html',
+      'crawl4ai_screenshot',
+      'crawl4ai_pdf',
+      'crawl4ai_execute_js',
+      'crawl4ai_ask',
+      'crawl4ai_enqueue_crawl_job',
+      'crawl4ai_get_crawl_job',
+      'crawl4ai_enqueue_llm_job',
+      'crawl4ai_get_llm_job',
+      'crawl4ai_schema',
+      'crawl4ai_health',
     ];
 
-    it('should register all required tools', () => {
-      mockTools.forEach(tool => {
-        expect(tool).toMatch(/^(scrape_url|batch_scrape|crawl_website|map_website|extract_structured_data|get_crawl_status|search_web|search_and_scrape|crawl4ai_scrape)$/);
-      });
+    it('documents the native Crawl4AI tools exposed by the server', () => {
+      expect(tools).not.toContain('scrape_url');
+      expect(tools).not.toContain('crawl4ai_scrape');
+      expect(tools).toContain('crawl4ai_crawl');
+      expect(tools).toContain('crawl4ai_markdown');
+      expect(tools).toContain('crawl4ai_crawl_stream');
     });
 
-    it('should validate tool input schemas', () => {
-      const scrapeSchema = {
-        type: 'object',
-        properties: {
-          url: { type: 'string' },
-          options: { type: 'object' }
-        },
-        required: ['url']
-      };
-
-      expect(scrapeSchema.required).toContain('url');
-      expect(scrapeSchema.properties.url.type).toBe('string');
+    it('uses Crawl4AI official Docker API defaults', () => {
+      const crawl4aiUrl = process.env.CRAWL4AI_URL || 'http://localhost:11235';
+      expect(crawl4aiUrl).toBe('http://localhost:11235');
     });
   });
 
-  describe('Environment Configuration', () => {
-    it('should load required environment variables', () => {
-      expect(process.env.PROXY_URL).toBeDefined();
-      expect(process.env.REDIS_URL).toBeDefined();
+  describe('MCP transport configuration', () => {
+    it('defaults to stdio and supports Streamable HTTP', () => {
+      const defaultTransport = process.env.MCP_TRANSPORT || 'stdio';
+      const supported = ['stdio', 'streamable-http', 'http'];
+
+      expect(defaultTransport).toBe('stdio');
+      expect(supported).toContain('streamable-http');
     });
 
-    it('should use default values for optional variables', () => {
-      const port = process.env.PORT || '3002';
-      const workers = process.env.NUM_WORKERS_PER_QUEUE || '8';
-      
-      expect(port).toBe('3002');
-      expect(workers).toBe('8');
+    it('documents the OpenAPI defaults for Open WebUI fallback mode', () => {
+      const openApiBasePath = process.env.OPENAPI_BASE_PATH || '/api';
+      expect(openApiBasePath).toBe('/api');
     });
   });
 });
