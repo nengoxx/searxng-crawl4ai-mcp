@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from '@jest/globals';
-import { SearXNGCrawl4AIMCPServer } from '../src/index';
+import { parseMcpText, SearXNGCrawl4AIMCPServer, textResult } from '../src/index';
 
 describe('SearXNG + Crawl4AI MCP Server', () => {
   const originalEnabledTools = process.env.ENABLED_TOOLS;
@@ -82,6 +82,73 @@ describe('SearXNG + Crawl4AI MCP Server', () => {
 
       expect(names).toHaveLength(16);
       expect(names).toContain('crawl4ai_health');
+    });
+
+    it('ignores unknown ENABLED_TOOLS entries instead of exposing phantom tools', () => {
+      process.env.ENABLED_TOOLS = 'search_web,not_a_real_tool,crawl4ai_markdown';
+      const server = new SearXNGCrawl4AIMCPServer();
+      const names = server.listTools().map(tool => tool.name);
+
+      expect(names).toEqual(['search_web', 'crawl4ai_markdown']);
+    });
+
+    it('can intentionally expose an empty tool list without invalid response shapes', () => {
+      process.env.ENABLED_TOOLS = 'not_a_real_tool';
+      const server = new SearXNGCrawl4AIMCPServer();
+
+      expect(server.listTools()).toEqual([]);
+      expect(textResult(server.listTools()).content[0].text).toBe('[]');
+    });
+
+    it('returns a valid empty search_and_crawl result when SearXNG has no hits', async () => {
+      process.env.ENABLED_TOOLS = 'search_and_crawl';
+      const searxng = {
+        search: async () => ({
+          query: 'empty',
+          number_of_results: 0,
+          results: [],
+          answers: [],
+          corrections: [],
+          infoboxes: [],
+          suggestions: [],
+          unresponsive_engines: [],
+        }),
+      } as any;
+      const crawl4ai = { crawl: async () => ({ should_not_be_called: true }) } as any;
+      const server = new SearXNGCrawl4AIMCPServer({ searxng, crawl4ai });
+
+      await expect(server.callTool('search_and_crawl', { query: 'empty' })).resolves.toEqual({
+        query: 'empty',
+        search_results: 0,
+        crawled_results: [],
+      });
+    });
+  });
+
+  describe('MCP content shape robustness', () => {
+    it('serializes undefined as JSON null text instead of an undefined text field', () => {
+      expect(textResult(undefined)).toEqual({
+        content: [
+          {
+            type: 'text',
+            text: 'null',
+          },
+        ],
+      });
+    });
+
+    it('serializes empty arrays and objects as valid text payloads', () => {
+      expect(textResult([]).content[0].text).toBe('[]');
+      expect(textResult({}).content[0].text).toBe('{}');
+    });
+
+    it('parses MCP text content for OpenAPI responses and tolerates empty content arrays', () => {
+      expect(parseMcpText(textResult({ ok: true }))).toEqual({ ok: true });
+      expect(parseMcpText({ content: [] })).toEqual({ content: [] });
+    });
+
+    it('preserves non-JSON text payloads for OpenAPI responses', () => {
+      expect(parseMcpText(textResult('plain text'))).toBe('plain text');
     });
   });
 

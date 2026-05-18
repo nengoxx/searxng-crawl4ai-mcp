@@ -25,16 +25,16 @@ const DEFAULT_ENABLED_TOOLS = [
   'crawl4ai_markdown',
 ];
 
-const textResult = (value: unknown) => ({
+export const textResult = (value: unknown) => ({
   content: [
     {
       type: 'text',
-      text: typeof value === 'string' ? value : JSON.stringify(value, null, 2),
+      text: typeof value === 'string' ? value : JSON.stringify(value ?? null, null, 2),
     },
   ],
 });
 
-const parseMcpText = (value: unknown): unknown => {
+export const parseMcpText = (value: unknown): unknown => {
   if (
     typeof value === 'object' &&
     value !== null &&
@@ -74,7 +74,7 @@ export class SearXNGCrawl4AIMCPServer {
   private readonly enabledTools: Set<string> | 'all';
   private isClosing = false;
 
-  constructor() {
+  constructor(dependencies: { searxng?: SearXNGClient; crawl4ai?: Crawl4AIClient } = {}) {
     this.server = new Server(
       {
         name: 'searxng-crawl4ai-mcp',
@@ -87,8 +87,8 @@ export class SearXNGCrawl4AIMCPServer {
       }
     );
 
-    this.searxng = new SearXNGClient(process.env.SEARXNG_URL || 'http://localhost:8081');
-    this.crawl4ai = new Crawl4AIClient(
+    this.searxng = dependencies.searxng || new SearXNGClient(process.env.SEARXNG_URL || 'http://localhost:8081');
+    this.crawl4ai = dependencies.crawl4ai || new Crawl4AIClient(
       process.env.CRAWL4AI_URL || 'http://localhost:11235',
       process.env.CRAWL4AI_BEARER_TOKEN
     );
@@ -106,7 +106,10 @@ export class SearXNGCrawl4AIMCPServer {
       try {
         return textResult(await this.callTool(request.params.name, (request.params.arguments || {}) as JsonRecord));
       } catch (error) {
-        logger.error(`Error executing tool ${request.params.name}:`, error);
+        logger.error(`Error executing tool ${request.params.name}:`, {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         throw error;
       }
     });
@@ -200,7 +203,14 @@ export class SearXNGCrawl4AIMCPServer {
       return 'all';
     }
 
-    return new Set(tokens);
+    const knownTools = new Set(this.allTools().map(tool => tool.name));
+    const enabled = tokens.filter(token => knownTools.has(token));
+    const unknown = tokens.filter(token => !knownTools.has(token));
+    if (unknown.length > 0) {
+      logger.warn(`Ignoring unknown ENABLED_TOOLS entries: ${unknown.join(', ')}`);
+    }
+
+    return new Set(enabled);
   }
 
   private isToolEnabled(name: string): boolean {
@@ -533,6 +543,8 @@ export class SearXNGCrawl4AIMCPServer {
   }
 }
 
+type McpRequestHandler = (req: express.Request, res: express.Response) => Promise<void>;
+
 async function runStdio() {
   process.env.MCP_MODE = 'true';
   const server = new SearXNGCrawl4AIMCPServer();
@@ -585,7 +597,9 @@ async function runStreamableHttp() {
       await server.connect(transport);
     }
 
-    await entry.transport.handleRequest(req, res, req.body);
+    await handleMcpHttpRequest(req, res, async () => {
+      await entry.transport.handleRequest(req, res, req.body);
+    });
   });
 
   app.get(endpoint, async (req, res) => {
@@ -595,7 +609,9 @@ async function runStreamableHttp() {
       res.status(400).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Missing or invalid session id' }, id: null });
       return;
     }
-    await entry.transport.handleRequest(req, res);
+    await handleMcpHttpRequest(req, res, async () => {
+      await entry.transport.handleRequest(req, res);
+    });
   });
 
   app.delete(endpoint, async (req, res) => {
@@ -605,7 +621,9 @@ async function runStreamableHttp() {
       res.status(400).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Missing or invalid session id' }, id: null });
       return;
     }
-    await entry.transport.handleRequest(req, res);
+    await handleMcpHttpRequest(req, res, async () => {
+      await entry.transport.handleRequest(req, res);
+    });
   });
 
   app.get('/health', (_req, res) => {
@@ -647,7 +665,10 @@ async function runStreamableHttp() {
       try {
         res.json(parseMcpText(await httpToolServer.callTool(tool.name, req.body || {})));
       } catch (error) {
-        logger.error(`OpenAPI tool ${tool.name} failed:`, error);
+        logger.error(`OpenAPI tool ${tool.name} failed:`, {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         res.status(500).json({
           error: error instanceof Error ? error.message : 'Unknown error',
         });
@@ -658,6 +679,30 @@ async function runStreamableHttp() {
   app.listen(port, host, () => {
     logger.info(`SearXNG + Crawl4AI MCP Streamable HTTP server listening on http://${host}:${port}${endpoint}`);
   });
+}
+
+async function handleMcpHttpRequest(req: express.Request, res: express.Response, handler: McpRequestHandler) {
+  try {
+    await handler(req, res);
+  } catch (error) {
+    logger.error('MCP Streamable HTTP request failed:', {
+      method: req.method,
+      path: req.path,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32603,
+          message: 'Internal server error',
+        },
+        id: null,
+      });
+    }
+  }
 }
 
 function buildOpenApiDocument(tools: Tool[], baseUrl: string) {
